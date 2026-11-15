@@ -1,6 +1,9 @@
 
 import streamlit as st
 import pandas as pd
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -17,7 +20,7 @@ chart_template = "plotly_dark" if is_dark else "plotly_white"
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/BITS_Retail_Cleaned_Integrated.csv")
+    df = pd.read_csv(BASE_DIR / "data" / "BITS_Retail_Cleaned_Integrated.csv")
     df["Order_Date"] = pd.to_datetime(df["Order_Date"])
     return df
 

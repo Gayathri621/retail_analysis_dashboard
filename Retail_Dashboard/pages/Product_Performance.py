@@ -2,6 +2,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 # -----------------------------------
 # THEME CONFIGURATION
@@ -24,7 +27,7 @@ MARGIN_COLOR = "#8B75B5"
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/BITS_Retail_Cleaned_Integrated.csv")
+    df = pd.read_csv(BASE_DIR / "data" / "BITS_Retail_Cleaned_Integrated.csv")
     df["Order_Date"] = pd.to_datetime(df["Order_Date"])
     return df
 

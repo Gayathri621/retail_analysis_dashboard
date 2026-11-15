@@ -3,6 +3,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 # -----------------------------------
 # THEME CONFIGURATION
@@ -23,7 +26,7 @@ year_colors = {
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/BITS_Retail_Cleaned_Integrated.csv")
+    df = pd.read_csv(BASE_DIR / "data" / "BITS_Retail_Cleaned_Integrated.csv")
     df["Order_Date"] = pd.to_datetime(df["Order_Date"])
     return df
 
