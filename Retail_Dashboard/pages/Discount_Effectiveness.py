@@ -1,11 +1,11 @@
 
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-import plotly.express as px
-import plotly.graph_objects as go
 
 # -----------------------------------
 # THEME CONFIGURATION
@@ -14,13 +14,68 @@ import plotly.graph_objects as go
 is_dark = st.get_option("theme.base") == "dark"
 chart_template = "plotly_dark" if is_dark else "plotly_white"
 
+VOLUME_COLOR = "#2878A5"
+
+# -----------------------------------
+# FORMATTING HELPERS
+# -----------------------------------
+
+def format_indian_number(value, decimals=2):
+    value = round(float(value), decimals)
+
+    formatted = f"{value:.{decimals}f}" if decimals > 0 else f"{int(value)}"
+
+    integer_part, decimal_part = formatted.split(".") if decimals > 0 else (formatted, "")
+
+    if len(integer_part) > 3:
+        last_three = integer_part[-3:]
+        remaining = integer_part[:-3]
+        groups = []
+
+        while remaining:
+            groups.insert(0, remaining[-2:])
+            remaining = remaining[:-2]
+
+        integer_part = ",".join(groups) + "," + last_three
+
+    if decimals > 0:
+        return integer_part + "." + decimal_part
+
+    return integer_part
+
+
+def format_inr(value):
+    return f"₹{format_indian_number(value)}"
+
+
+def format_inr_lakhs(value):
+    return f"₹{format_indian_number(value / 100000)} L"
+
+
+def format_inr_crores(value):
+    return f"₹{format_indian_number(value / 10000000)} Cr"
+
+
+def format_compact_inr(value):
+    value = float(value)
+
+    if abs(value) >= 10000000:
+        return f"₹{format_indian_number(value / 10000000)} Cr"
+    elif abs(value) >= 100000:
+        return f"₹{format_indian_number(value / 100000)} L"
+    else:
+        return f"₹{format_indian_number(value, 0)}"
+
+
 # -----------------------------------
 # LOAD DATA
 # -----------------------------------
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(BASE_DIR / "data" / "BITS_Retail_Cleaned_Integrated.csv")
+    df = pd.read_csv(
+        BASE_DIR / "data" / "BITS_Retail_Cleaned_Integrated.csv"
+    )
     df["Order_Date"] = pd.to_datetime(df["Order_Date"])
     return df
 
@@ -98,7 +153,7 @@ discount_summary = (
 
 discount_summary["Profit_Margin"] = (
     discount_summary["Profit"] /
-    discount_summary["Net_Sales"] * 100
+    discount_summary["Net_Sales"].replace(0, float("nan")) * 100
 )
 
 # -----------------------------------
@@ -122,17 +177,17 @@ c1, c2, c3 = st.columns(3)
 
 c1.metric(
     "No-Discount Margin",
-    f"{no_discount_margin:.2f}%"
+    f"{no_discount_margin:.2f}%" if pd.notna(no_discount_margin) else "N/A"
 )
 
 c2.metric(
     "15–20% Discount Margin",
-    f"{medium_high_margin:.2f}%"
+    f"{medium_high_margin:.2f}%" if pd.notna(medium_high_margin) else "N/A"
 )
 
 c3.metric(
     "Above 20% Discount Margin",
-    f"{high_discount_margin:.2f}%"
+    f"{high_discount_margin:.2f}%" if pd.notna(high_discount_margin) else "N/A"
 )
 
 st.divider()
@@ -148,7 +203,7 @@ st.caption(
     "of net sales within each discount band."
 )
 
-# Use red for negative margins and green for positive margins.
+# Red for negative margins and green for positive margins
 bar_colors = [
     "#16A085" if value >= 0 else "#E74C3C"
     for value in discount_summary["Profit_Margin"].fillna(0)
@@ -157,6 +212,15 @@ bar_colors = [
 margin_customdata = discount_summary[
     ["Orders", "Net_Sales", "Profit"]
 ].to_numpy()
+
+# Preformatted monetary hover values
+discount_summary["Net_Sales_Hover"] = (
+    discount_summary["Net_Sales"].apply(format_inr)
+)
+
+discount_summary["Profit_Hover"] = (
+    discount_summary["Profit"].apply(format_inr)
+)
 
 fig_margin = go.Figure()
 
@@ -180,8 +244,8 @@ fig_margin.add_trace(
             "<b>Discount band: %{x}</b><br>"
             "Profit margin: %{y:.2f}%<br>"
             "Transactions: %{customdata[0]:,.0f}<br>"
-            "Net sales: ₹%{customdata[1]:,.2f}<br>"
-            "Profit: ₹%{customdata[2]:,.2f}"
+            "Net sales: %{customdata[1]}<br>"
+            "Profit: %{customdata[2]}"
             "<extra></extra>"
         )
     )
@@ -229,19 +293,19 @@ fig_volume = px.bar(
     x=discount_summary["Discount_Band"].astype(str),
     y="Orders",
     text="Orders",
-    color="Orders",
-    color_continuous_scale="Blues",
     custom_data=["Net_Sales", "Profit"],
     title="Number of Transactions Across Discount Bands",
     labels={
         "x": "Discount Band",
         "Orders": "Number of Transactions"
-    }
+    },
+    color_discrete_sequence=[VOLUME_COLOR]
 )
 
 fig_volume.update_traces(
     width=0.48,
     textposition="outside",
+    cliponaxis=False,
     hovertemplate=(
         "<b>Discount band: %{x}</b><br>"
         "Transactions: %{y:,.0f}<br>"
@@ -254,7 +318,7 @@ fig_volume.update_traces(
 fig_volume.update_layout(
     template=chart_template,
     height=380,
-    coloraxis_showscale=False,
+    showlegend=False,
     bargap=0.5,
     xaxis_title="Discount Band",
     yaxis_title="Number of Transactions",
@@ -292,7 +356,7 @@ category_discount["Profit_Margin"] = (
     category_discount["Net_Sales"].replace(0, float("nan")) * 100
 )
 
-# Pivot aggregated values into a proper heatmap matrix.
+# Pivot aggregated values into a heatmap matrix
 heatmap_data = category_discount.pivot(
     index="Category",
     columns="Discount_Band",
@@ -370,9 +434,17 @@ subcategory_discount["Profit_Margin"] = (
     subcategory_discount["Net_Sales"].replace(0, float("nan")) * 100
 )
 
-# Remove empty combinations so they do not create misleading line points.
+# Remove empty combinations so they do not create misleading line points
 subcategory_discount = subcategory_discount.dropna(
     subset=["Profit_Margin"]
+)
+
+subcategory_discount["Net_Sales_Hover"] = (
+    subcategory_discount["Net_Sales"].apply(format_inr)
+)
+
+subcategory_discount["Profit_Hover"] = (
+    subcategory_discount["Profit"].apply(format_inr)
 )
 
 fig_subcategory = px.line(
@@ -381,7 +453,11 @@ fig_subcategory = px.line(
     y="Profit_Margin",
     color="Subcategory",
     markers=True,
-    custom_data=["Orders", "Net_Sales", "Profit"],
+    custom_data=[
+        "Orders",
+        "Net_Sales_Hover",
+        "Profit_Hover"
+    ],
     title=f"Profit Margin Across Discount Bands – {selected_category}",
     labels={
         "Discount_Band": "Discount Band",
@@ -398,8 +474,8 @@ fig_subcategory.update_traces(
         "Discount band: %{x}<br>"
         "Profit margin: %{y:.2f}%<br>"
         "Transactions: %{customdata[0]:,.0f}<br>"
-        "Net sales: ₹%{customdata[1]:,.2f}<br>"
-        "Profit: ₹%{customdata[2]:,.2f}"
+        "Net sales: %{customdata[1]}<br>"
+        "Profit: %{customdata[2]}"
         "<extra></extra>"
     )
 )
@@ -444,15 +520,27 @@ for col in [
     "Net_Sales",
     "Profit"
 ]:
-    display_data[col] = display_data[col].map(
-        lambda x: f"₹{x:,.2f}"
-    )
+    display_data[col] = display_data[col].map(format_inr)
+
+display_data["Orders"] = display_data["Orders"].map(
+    lambda x: format_indian_number(x, 0)
+)
 
 display_data["Profit_Margin"] = display_data[
     "Profit_Margin"
 ].map(
     lambda x: f"{x:.2f}%" if pd.notna(x) else "N/A"
 )
+
+display_data = display_data.rename(columns={
+    "Discount_Band": "Discount Band",
+    "Orders": "Transactions",
+    "Gross_Sales": "Gross Sales",
+    "Discount_Amount": "Discount Amount",
+    "Net_Sales": "Net Sales",
+    "Profit": "Profit",
+    "Profit_Margin": "Profit Margin"
+})
 
 st.dataframe(
     display_data,
@@ -471,6 +559,7 @@ st.markdown("""
 - Transactions with discounts above 20% generate negative aggregate profit.
 - Higher discounts are associated with substantial margin erosion, particularly in Technology.
 - Computers and Phones are especially vulnerable to higher discount levels, while Accessories and Monitors retain stronger profitability.
+- Discount decisions should consider product-level margin differences instead of applying a uniform discount policy across categories.
 """)
 
 st.warning(

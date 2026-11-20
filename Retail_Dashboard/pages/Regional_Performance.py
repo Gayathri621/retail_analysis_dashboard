@@ -5,6 +5,7 @@ import plotly.express as px
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 # -----------------------------------
 # THEME CONFIGURATION
 # -----------------------------------
@@ -15,6 +16,57 @@ chart_template = "plotly_dark" if is_dark else "plotly_white"
 SALES_COLOR = "#2878A5"
 PROFIT_COLOR = "#35A68A"
 MARGIN_COLOR = "#8B75B5"
+
+# -----------------------------------
+# FORMATTING HELPERS
+# -----------------------------------
+
+def format_indian_number(value, decimals=2):
+    value = round(float(value), decimals)
+
+    formatted = f"{value:.{decimals}f}" if decimals > 0 else f"{int(value)}"
+
+    integer_part, decimal_part = formatted.split(".") if decimals > 0 else (formatted, "")
+
+    if len(integer_part) > 3:
+        last_three = integer_part[-3:]
+        remaining = integer_part[:-3]
+        groups = []
+
+        while remaining:
+            groups.insert(0, remaining[-2:])
+            remaining = remaining[:-2]
+
+        integer_part = ",".join(groups) + "," + last_three
+
+    if decimals > 0:
+        return integer_part + "." + decimal_part
+
+    return integer_part
+
+
+def format_inr(value):
+    return f"₹{format_indian_number(value)}"
+
+
+def format_inr_lakhs(value):
+    return f"₹{format_indian_number(value / 100000)} L"
+
+
+def format_inr_crores(value):
+    return f"₹{format_indian_number(value / 10000000)} Cr"
+
+
+def format_compact_inr(value):
+    value = float(value)
+
+    if abs(value) >= 10000000:
+        return f"₹{format_indian_number(value / 10000000)} Cr"
+    elif abs(value) >= 100000:
+        return f"₹{format_indian_number(value / 100000)} L"
+    else:
+        return f"₹{format_indian_number(value, 0)}"
+
 
 # -----------------------------------
 # LOAD DATA
@@ -100,13 +152,13 @@ c1, c2, c3 = st.columns(3)
 c1.metric(
     "Highest Sales Region",
     top_sales["Region"],
-    f"₹{top_sales['Net_Sales']/10000000:.2f} Cr"
+    format_inr_crores(top_sales["Net_Sales"])
 )
 
 c2.metric(
     "Highest Profit Region",
     top_profit["Region"],
-    f"₹{top_profit['Profit']/100000:.2f} L"
+    format_inr_lakhs(top_profit["Profit"])
 )
 
 c3.metric(
@@ -125,20 +177,41 @@ st.subheader("Regional Sales and Profit")
 
 col1, col2 = st.columns(2)
 
-# Net Sales by Region
+# -----------------------------------
+# NET SALES BY REGION
+# -----------------------------------
+
 with col1:
-    sales_sorted = regional.sort_values("Net_Sales")
+    sales_sorted = regional.sort_values("Net_Sales").copy()
+
+    sales_sorted["Sales_Label"] = sales_sorted["Net_Sales"].apply(
+        format_compact_inr
+    )
+    sales_sorted["Sales_Hover"] = sales_sorted["Net_Sales"].apply(
+        format_inr
+    )
+    sales_sorted["Profit_Hover"] = sales_sorted["Profit"].apply(
+        format_inr
+    )
+    sales_sorted["Discount_Hover"] = sales_sorted["Discount_Amount"].apply(
+        format_inr
+    )
 
     fig_sales = px.bar(
         sales_sorted,
         x="Net_Sales",
         y="Region",
         orientation="h",
-        text="Net_Sales",
-        custom_data=["Orders", "Profit", "Profit_Margin", "Discount_Amount"],
+        text="Sales_Label",
+        custom_data=[
+            "Orders",
+            "Profit_Hover",
+            "Profit_Margin",
+            "Discount_Hover"
+        ],
         title="Net Sales by Region",
         labels={
-            "Net_Sales": "Net Sales (₹)",
+            "Net_Sales": "Net Sales",
             "Region": ""
         },
         color_discrete_sequence=[SALES_COLOR]
@@ -146,16 +219,16 @@ with col1:
 
     fig_sales.update_traces(
         width=0.55,
-        texttemplate="%{x:.3s}",
+        texttemplate="%{text}",
         textposition="outside",
         cliponaxis=False,
         hovertemplate=(
             "<b>%{y}</b><br>"
-            "Net Sales: ₹%{x:,.2f}<br>"
-            "Transactions: %{customdata[0]:,.0f}<br>"
-            "Profit: ₹%{customdata[1]:,.2f}<br>"
-            "Profit Margin: %{customdata[2]:.2f}%<br>"
-            "Discount Amount: ₹%{customdata[3]:,.2f}"
+            "Net Sales: %{customdata[0]}<br>"
+            "Transactions: %{customdata[1]:,.0f}<br>"
+            "Profit: %{customdata[2]}<br>"
+            "Profit Margin: %{customdata[3]:.2f}%<br>"
+            "Discount Amount: %{customdata[4]}"
             "<extra></extra>"
         )
     )
@@ -166,25 +239,50 @@ with col1:
         showlegend=False,
         xaxis_title="Net Sales (₹)",
         yaxis_title="",
-        margin=dict(l=10, r=55, t=65, b=45)
+        margin=dict(l=10, r=80, t=65, b=45)
+    )
+
+    fig_sales.update_xaxes(
+        tickformat=",.0f"
     )
 
     st.plotly_chart(fig_sales, use_container_width=True)
 
-# Profit by Region
+# -----------------------------------
+# PROFIT BY REGION
+# -----------------------------------
+
 with col2:
-    profit_sorted = regional.sort_values("Profit")
+    profit_sorted = regional.sort_values("Profit").copy()
+
+    profit_sorted["Profit_Label"] = profit_sorted["Profit"].apply(
+        format_compact_inr
+    )
+    profit_sorted["Profit_Hover"] = profit_sorted["Profit"].apply(
+        format_inr
+    )
+    profit_sorted["Sales_Hover"] = profit_sorted["Net_Sales"].apply(
+        format_inr
+    )
+    profit_sorted["Discount_Hover"] = profit_sorted["Discount_Amount"].apply(
+        format_inr
+    )
 
     fig_profit = px.bar(
         profit_sorted,
         x="Profit",
         y="Region",
         orientation="h",
-        text="Profit",
-        custom_data=["Orders", "Net_Sales", "Profit_Margin", "Discount_Amount"],
+        text="Profit_Label",
+        custom_data=[
+            "Orders",
+            "Sales_Hover",
+            "Profit_Margin",
+            "Discount_Hover"
+        ],
         title="Profit by Region",
         labels={
-            "Profit": "Profit (₹)",
+            "Profit": "Profit",
             "Region": ""
         },
         color_discrete_sequence=[PROFIT_COLOR]
@@ -192,16 +290,16 @@ with col2:
 
     fig_profit.update_traces(
         width=0.55,
-        texttemplate="%{x:.3s}",
+        texttemplate="%{text}",
         textposition="outside",
         cliponaxis=False,
         hovertemplate=(
             "<b>%{y}</b><br>"
-            "Profit: ₹%{x:,.2f}<br>"
-            "Transactions: %{customdata[0]:,.0f}<br>"
-            "Net Sales: ₹%{customdata[1]:,.2f}<br>"
-            "Profit Margin: %{customdata[2]:.2f}%<br>"
-            "Discount Amount: ₹%{customdata[3]:,.2f}"
+            "Profit: %{customdata[0]}<br>"
+            "Transactions: %{customdata[1]:,.0f}<br>"
+            "Net Sales: %{customdata[2]}<br>"
+            "Profit Margin: %{customdata[3]:.2f}%<br>"
+            "Discount Amount: %{customdata[4]}"
             "<extra></extra>"
         )
     )
@@ -212,7 +310,11 @@ with col2:
         showlegend=False,
         xaxis_title="Profit (₹)",
         yaxis_title="",
-        margin=dict(l=10, r=55, t=65, b=45)
+        margin=dict(l=10, r=80, t=65, b=45)
+    )
+
+    fig_profit.update_xaxes(
+        tickformat=",.0f"
     )
 
     st.plotly_chart(fig_profit, use_container_width=True)
@@ -225,7 +327,17 @@ st.divider()
 
 st.subheader("Sales vs Profitability")
 
-margin_sorted = regional.sort_values("Profit_Margin")
+margin_sorted = regional.sort_values("Profit_Margin").copy()
+
+margin_sorted["Sales_Hover"] = margin_sorted["Net_Sales"].apply(
+    format_inr
+)
+margin_sorted["Profit_Hover"] = margin_sorted["Profit"].apply(
+    format_inr
+)
+margin_sorted["Discount_Hover"] = margin_sorted["Discount_Amount"].apply(
+    format_inr
+)
 
 fig_margin = px.bar(
     margin_sorted,
@@ -233,7 +345,12 @@ fig_margin = px.bar(
     y="Region",
     orientation="h",
     text="Profit_Margin",
-    custom_data=["Orders", "Net_Sales", "Profit", "Discount_Amount"],
+    custom_data=[
+        "Orders",
+        "Sales_Hover",
+        "Profit_Hover",
+        "Discount_Hover"
+    ],
     title="Profit Margin by Region",
     labels={
         "Profit_Margin": "Profit Margin (%)",
@@ -251,9 +368,9 @@ fig_margin.update_traces(
         "<b>%{y}</b><br>"
         "Profit Margin: %{x:.2f}%<br>"
         "Transactions: %{customdata[0]:,.0f}<br>"
-        "Net Sales: ₹%{customdata[1]:,.2f}<br>"
-        "Profit: ₹%{customdata[2]:,.2f}<br>"
-        "Discount Amount: ₹%{customdata[3]:,.2f}"
+        "Net Sales: %{customdata[1]}<br>"
+        "Profit: %{customdata[2]}<br>"
+        "Discount Amount: %{customdata[3]}"
         "<extra></extra>"
     )
 )
@@ -267,7 +384,9 @@ fig_margin.update_layout(
     margin=dict(l=10, r=65, t=65, b=45)
 )
 
-fig_margin.update_xaxes(ticksuffix="%")
+fig_margin.update_xaxes(
+    ticksuffix="%"
+)
 
 st.plotly_chart(fig_margin, use_container_width=True)
 
@@ -283,11 +402,11 @@ display_regional = regional.copy()
 
 display_regional["Net_Sales"] = display_regional[
     "Net_Sales"
-].map(lambda x: f"₹{x:,.2f}")
+].map(format_inr)
 
 display_regional["Profit"] = display_regional[
     "Profit"
-].map(lambda x: f"₹{x:,.2f}")
+].map(format_inr)
 
 display_regional["Profit_Margin"] = display_regional[
     "Profit_Margin"
@@ -295,7 +414,11 @@ display_regional["Profit_Margin"] = display_regional[
 
 display_regional["Discount_Amount"] = display_regional[
     "Discount_Amount"
-].map(lambda x: f"₹{x:,.2f}")
+].map(format_inr)
+
+display_regional["Orders"] = display_regional[
+    "Orders"
+].map(lambda x: format_indian_number(x, 0))
 
 display_regional = display_regional.rename(columns={
     "Region": "Region",
@@ -319,11 +442,11 @@ st.dataframe(
 st.subheader("Key Business Insights")
 
 st.markdown(f"""
-- **{top_sales['Region']}** leads in net sales, generating ₹{top_sales['Net_Sales']/10000000:.2f} Cr in the selected period.
-- **{top_profit['Region']}** generates the highest absolute profit of ₹{top_profit['Profit']/100000:.2f} L.
-- **{top_margin['Region']}** records the highest profit margin at {top_margin['Profit_Margin']:.2f}%, while **{lowest_margin['Region']}** has the lowest margin at {lowest_margin['Profit_Margin']:.2f}%.
+- **{top_sales['Region']}** leads in net sales, generating **{format_inr_crores(top_sales['Net_Sales'])}** in the selected period.
+- **{top_profit['Region']}** generates the highest absolute profit of **{format_inr_lakhs(top_profit['Profit'])}**.
+- **{top_margin['Region']}** records the highest profit margin at **{top_margin['Profit_Margin']:.2f}%**, while **{lowest_margin['Region']}** has the lowest margin at **{lowest_margin['Profit_Margin']:.2f}%**.
 - **{lowest_sales['Region']}** has the lowest net sales, making it the smallest regional contributor by revenue.
-- Higher sales do not necessarily translate into higher profitability. Regional margin comparisons help distinguish revenue scale from profit efficiency.
+- Revenue scale and profitability efficiency are not necessarily aligned: a region with higher sales may not generate the strongest margin. Comparing sales, absolute profit, and margin together helps distinguish regional scale from profit efficiency.
 """)
 
 st.caption(

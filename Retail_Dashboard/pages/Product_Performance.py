@@ -22,6 +22,57 @@ category_colors = {
 MARGIN_COLOR = "#8B75B5"
 
 # -----------------------------------
+# FORMATTING HELPERS
+# -----------------------------------
+
+def format_indian_number(value, decimals=2):
+    value = round(float(value), decimals)
+
+    formatted = f"{value:.{decimals}f}" if decimals > 0 else f"{int(value)}"
+
+    integer_part, decimal_part = formatted.split(".") if decimals > 0 else (formatted, "")
+
+    if len(integer_part) > 3:
+        last_three = integer_part[-3:]
+        remaining = integer_part[:-3]
+        groups = []
+
+        while remaining:
+            groups.insert(0, remaining[-2:])
+            remaining = remaining[:-2]
+
+        integer_part = ",".join(groups) + "," + last_three
+
+    if decimals > 0:
+        return integer_part + "." + decimal_part
+
+    return integer_part
+
+
+def format_inr(value):
+    return f"₹{format_indian_number(value)}"
+
+
+def format_inr_lakhs(value):
+    return f"₹{format_indian_number(value / 100000)} L"
+
+
+def format_inr_crores(value):
+    return f"₹{format_indian_number(value / 10000000)} Cr"
+
+
+def format_compact_inr(value):
+    value = float(value)
+
+    if abs(value) >= 10000000:
+        return f"₹{format_indian_number(value / 10000000)} Cr"
+    elif abs(value) >= 100000:
+        return f"₹{format_indian_number(value / 100000)} L"
+    else:
+        return f"₹{format_indian_number(value, 0)}"
+
+
+# -----------------------------------
 # LOAD DATA
 # -----------------------------------
 
@@ -145,12 +196,12 @@ c1.metric(
 c2.metric(
     "Top Subcategory by Sales",
     top_subcategory["Subcategory"],
-    f"₹{top_subcategory['Net_Sales']/100000:.2f} L"
+    format_inr_lakhs(top_subcategory["Net_Sales"])
 )
 
 c3.metric(
     "Highest Subcategory Margin",
-    top_margin_subcategory["Subcategory"],
+    f"{top_margin_subcategory['Category']} – {top_margin_subcategory['Subcategory']}",
     f"{top_margin_subcategory['Profit_Margin']:.2f}%"
 )
 
@@ -168,15 +219,35 @@ st.subheader("Category Contribution to Net Sales")
 
 col1, col2 = st.columns([1, 1])
 
-# Category Treemap
+# -----------------------------------
+# CATEGORY TREEMAP
+# -----------------------------------
+
 with col1:
+
+    category_display = category.copy()
+
+    category_display["Profit_Hover"] = category_display["Profit"].apply(
+        format_inr
+    )
+
+    category_display["Sales_Hover"] = category_display["Net_Sales"].apply(
+        format_inr
+    )
+
     fig_treemap = px.treemap(
-        category,
+        category_display,
         path=["Category"],
         values="Net_Sales",
         color="Profit_Margin",
         color_continuous_scale="Teal",
-        custom_data=["Profit", "Profit_Margin", "Sales_Share", "Orders"],
+        custom_data=[
+            "Profit_Hover",
+            "Profit_Margin",
+            "Sales_Share",
+            "Orders",
+            "Sales_Hover"
+        ],
         title="Category Sales Contribution"
     )
 
@@ -184,9 +255,9 @@ with col1:
         texttemplate="%{label}<br>%{percentRoot:.1%}",
         hovertemplate=(
             "<b>%{label}</b><br>"
-            "Net Sales: ₹%{value:,.2f}<br>"
+            "Net Sales: %{customdata[4]}<br>"
             "Sales Share: %{customdata[2]:.1f}%<br>"
-            "Profit: ₹%{customdata[0]:,.2f}<br>"
+            "Profit: %{customdata[0]}<br>"
             "Profit Margin: %{customdata[1]:.2f}%<br>"
             "Transactions: %{customdata[3]:,.0f}"
             "<extra></extra>"
@@ -201,9 +272,21 @@ with col1:
 
     st.plotly_chart(fig_treemap, use_container_width=True)
 
-# Category Profit Margin
+# -----------------------------------
+# CATEGORY PROFIT MARGIN
+# -----------------------------------
+
 with col2:
-    category_margin_sorted = category.sort_values("Profit_Margin")
+
+    category_margin_sorted = category.sort_values("Profit_Margin").copy()
+
+    category_margin_sorted["Sales_Hover"] = (
+        category_margin_sorted["Net_Sales"].apply(format_inr)
+    )
+
+    category_margin_sorted["Profit_Hover"] = (
+        category_margin_sorted["Profit"].apply(format_inr)
+    )
 
     fig_category_margin = px.bar(
         category_margin_sorted,
@@ -211,7 +294,12 @@ with col2:
         y="Category",
         orientation="h",
         text="Profit_Margin",
-        custom_data=["Net_Sales", "Profit", "Sales_Share", "Orders"],
+        custom_data=[
+            "Sales_Hover",
+            "Profit_Hover",
+            "Sales_Share",
+            "Orders"
+        ],
         title="Profit Margin by Category",
         labels={
             "Profit_Margin": "Profit Margin (%)",
@@ -228,8 +316,8 @@ with col2:
         hovertemplate=(
             "<b>%{y}</b><br>"
             "Profit Margin: %{x:.2f}%<br>"
-            "Net Sales: ₹%{customdata[0]:,.2f}<br>"
-            "Profit: ₹%{customdata[1]:,.2f}<br>"
+            "Net Sales: %{customdata[0]}<br>"
+            "Profit: %{customdata[1]}<br>"
             "Sales Share: %{customdata[2]:.1f}%<br>"
             "Transactions: %{customdata[3]:,.0f}"
             "<extra></extra>"
@@ -245,7 +333,9 @@ with col2:
         margin=dict(t=65, b=45, l=10, r=65)
     )
 
-    fig_category_margin.update_xaxes(ticksuffix="%")
+    fig_category_margin.update_xaxes(
+        ticksuffix="%"
+    )
 
     st.plotly_chart(fig_category_margin, use_container_width=True)
 
@@ -257,7 +347,19 @@ st.divider()
 
 st.subheader("Subcategory Performance")
 
-subcategory_sales_sorted = subcategory.sort_values("Net_Sales")
+subcategory_sales_sorted = subcategory.sort_values("Net_Sales").copy()
+
+subcategory_sales_sorted["Sales_Label"] = (
+    subcategory_sales_sorted["Net_Sales"].apply(format_compact_inr)
+)
+
+subcategory_sales_sorted["Sales_Hover"] = (
+    subcategory_sales_sorted["Net_Sales"].apply(format_inr)
+)
+
+subcategory_sales_sorted["Profit_Hover"] = (
+    subcategory_sales_sorted["Profit"].apply(format_inr)
+)
 
 fig_subcategory_sales = px.bar(
     subcategory_sales_sorted,
@@ -265,11 +367,18 @@ fig_subcategory_sales = px.bar(
     y="Display_Label",
     color="Category",
     orientation="h",
-    text="Net_Sales",
-    custom_data=["Orders", "Profit", "Profit_Margin", "Quantity", "Sales_Share"],
+    text="Sales_Label",
+    custom_data=[
+        "Orders",
+        "Profit_Hover",
+        "Profit_Margin",
+        "Quantity",
+        "Sales_Share",
+        "Sales_Hover"
+    ],
     title="Net Sales by Subcategory",
     labels={
-        "Net_Sales": "Net Sales (₹)",
+        "Net_Sales": "Net Sales",
         "Display_Label": "",
         "Category": "Category"
     },
@@ -278,14 +387,14 @@ fig_subcategory_sales = px.bar(
 
 fig_subcategory_sales.update_traces(
     width=0.55,
-    texttemplate="%{x:.3s}",
+    texttemplate="%{text}",
     textposition="outside",
     cliponaxis=False,
     hovertemplate=(
         "<b>%{y}</b><br>"
-        "Net Sales: ₹%{x:,.2f}<br>"
+        "Net Sales: %{customdata[5]}<br>"
         "Transactions: %{customdata[0]:,.0f}<br>"
-        "Profit: ₹%{customdata[1]:,.2f}<br>"
+        "Profit: %{customdata[1]}<br>"
         "Profit Margin: %{customdata[2]:.2f}%<br>"
         "Quantity Sold: %{customdata[3]:,.0f}<br>"
         "Sales Share: %{customdata[4]:.1f}%"
@@ -299,7 +408,11 @@ fig_subcategory_sales.update_layout(
     xaxis_title="Net Sales (₹)",
     yaxis_title="",
     legend_title="Category",
-    margin=dict(t=65, b=45, l=10, r=65)
+    margin=dict(t=65, b=45, l=10, r=85)
+)
+
+fig_subcategory_sales.update_xaxes(
+    tickformat=",.0f"
 )
 
 st.plotly_chart(fig_subcategory_sales, use_container_width=True)
@@ -310,7 +423,15 @@ st.plotly_chart(fig_subcategory_sales, use_container_width=True)
 
 st.subheader("Subcategory Profitability")
 
-subcategory_margin_sorted = subcategory.sort_values("Profit_Margin")
+subcategory_margin_sorted = subcategory.sort_values("Profit_Margin").copy()
+
+subcategory_margin_sorted["Sales_Hover"] = (
+    subcategory_margin_sorted["Net_Sales"].apply(format_inr)
+)
+
+subcategory_margin_sorted["Profit_Hover"] = (
+    subcategory_margin_sorted["Profit"].apply(format_inr)
+)
 
 fig_subcategory_margin = px.bar(
     subcategory_margin_sorted,
@@ -319,7 +440,12 @@ fig_subcategory_margin = px.bar(
     color="Category",
     orientation="h",
     text="Profit_Margin",
-    custom_data=["Orders", "Net_Sales", "Profit", "Quantity"],
+    custom_data=[
+        "Orders",
+        "Sales_Hover",
+        "Profit_Hover",
+        "Quantity"
+    ],
     title="Profit Margin by Subcategory",
     labels={
         "Profit_Margin": "Profit Margin (%)",
@@ -338,8 +464,8 @@ fig_subcategory_margin.update_traces(
         "<b>%{y}</b><br>"
         "Profit Margin: %{x:.2f}%<br>"
         "Transactions: %{customdata[0]:,.0f}<br>"
-        "Net Sales: ₹%{customdata[1]:,.2f}<br>"
-        "Profit: ₹%{customdata[2]:,.2f}<br>"
+        "Net Sales: %{customdata[1]}<br>"
+        "Profit: %{customdata[2]}<br>"
         "Quantity Sold: %{customdata[3]:,.0f}"
         "<extra></extra>"
     )
@@ -351,10 +477,12 @@ fig_subcategory_margin.update_layout(
     xaxis_title="Profit Margin (%)",
     yaxis_title="",
     legend_title="Category",
-    margin=dict(t=65, b=45, l=10, r=65)
+    margin=dict(t=65, b=45, l=10, r=85)
 )
 
-fig_subcategory_margin.update_xaxes(ticksuffix="%")
+fig_subcategory_margin.update_xaxes(
+    ticksuffix="%"
+)
 
 st.plotly_chart(fig_subcategory_margin, use_container_width=True)
 
@@ -370,11 +498,11 @@ display_data = subcategory.copy()
 
 display_data["Net_Sales"] = display_data[
     "Net_Sales"
-].map(lambda x: f"₹{x:,.2f}")
+].map(format_inr)
 
 display_data["Profit"] = display_data[
     "Profit"
-].map(lambda x: f"₹{x:,.2f}")
+].map(format_inr)
 
 display_data["Profit_Margin"] = display_data[
     "Profit_Margin"
@@ -383,6 +511,14 @@ display_data["Profit_Margin"] = display_data[
 display_data["Sales_Share"] = display_data[
     "Sales_Share"
 ].map(lambda x: f"{x:.2f}%")
+
+display_data["Orders"] = display_data[
+    "Orders"
+].map(lambda x: format_indian_number(x, 0))
+
+display_data["Quantity"] = display_data[
+    "Quantity"
+].map(lambda x: format_indian_number(x, 0))
 
 display_data = display_data.rename(columns={
     "Orders": "Transactions",
@@ -416,23 +552,15 @@ st.dataframe(
 
 st.subheader("Key Business Insights")
 
-technology = category[
-    category["Category"] == "Technology"
-]
-
-technology_share = (
-    technology["Sales_Share"].iloc[0]
-    if not technology.empty else 0
-)
-
 lowest_margin_category = category.loc[
     category["Profit_Margin"].idxmin()
 ]
 
 st.markdown(f"""
-- **{top_category['Category']}** is the leading revenue category, contributing {top_category['Sales_Share']:.1f}% of net sales.
-- **{top_subcategory['Category']} – {top_subcategory['Subcategory']}** is the largest subcategory by net sales, generating ₹{top_subcategory['Net_Sales']/100000:.2f} L.
-- **{top_margin_subcategory['Category']} – {top_margin_subcategory['Subcategory']}** records the highest subcategory profit margin at {top_margin_subcategory['Profit_Margin']:.2f}%, showing that the largest revenue contributor is not necessarily the most profitable.
-- **{lowest_margin_category['Category']}** has the lowest category-level margin at {lowest_margin_category['Profit_Margin']:.2f}%, making it worth examining its product mix and discount strategy.
+- **{top_category['Category']}** is the leading revenue category, contributing **{top_category['Sales_Share']:.1f}%** of net sales.
+- **{top_subcategory['Category']} – {top_subcategory['Subcategory']}** is the largest subcategory by net sales, generating **{format_inr_lakhs(top_subcategory['Net_Sales'])}**.
+- **{top_margin_subcategory['Category']} – {top_margin_subcategory['Subcategory']}** records the highest subcategory profit margin at **{top_margin_subcategory['Profit_Margin']:.2f}%**, demonstrating that the largest revenue contributor is not necessarily the most margin-efficient.
+- **{lowest_margin_category['Category']}** has the lowest category-level margin at **{lowest_margin_category['Profit_Margin']:.2f}%**, making it worth examining its product mix and discount strategy.
 - Product-level decisions should consider both sales contribution and profit margin rather than relying on revenue alone.
 """)
+ 
